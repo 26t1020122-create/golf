@@ -14,6 +14,7 @@ add_action( 'after_setup_theme', 'fairways_theme_setup' );
 function fairways_enqueue_assets() {
     wp_enqueue_style( 'fairways-home', get_template_directory_uri() . '/assets/css/home.css', array(), '1.1.0' );
     wp_enqueue_script( 'fairways-home', get_template_directory_uri() . '/assets/js/home.js', array(), '1.1.0', true );
+    wp_enqueue_script( 'fairways-carousel', get_template_directory_uri() . '/assets/js/carousel.js', array(), '1.0.0', true );
 }
 add_action( 'wp_enqueue_scripts', 'fairways_enqueue_assets' );
 
@@ -175,3 +176,152 @@ function fairways_register_homepage_fields() {
     ) );
 }
 add_action( 'acf/init', 'fairways_register_homepage_fields' );
+
+/**
+ * Get an ACF value with a fallback (safe when ACF is not active).
+ */
+function fairways_get( $name, $default = '' ) {
+    $value = function_exists( 'get_field' ) ? get_field( $name ) : '';
+    return $value ? $value : $default;
+}
+
+/**
+ * Custom post types: Sự kiện (events) and Khuyến mãi (offers).
+ * After activating the theme, go to Settings > Permalinks and click Save once.
+ */
+function fairways_register_post_types() {
+    register_post_type( 'fw_event', array(
+        'labels' => array(
+            'name' => 'Sự kiện', 'singular_name' => 'Sự kiện', 'menu_name' => 'Sự kiện',
+            'add_new_item' => 'Thêm sự kiện', 'edit_item' => 'Sửa sự kiện', 'all_items' => 'Tất cả sự kiện',
+        ),
+        'public' => true, 'has_archive' => true, 'show_in_rest' => true,
+        'menu_icon' => 'dashicons-calendar-alt', 'menu_position' => 5,
+        'supports' => array( 'title', 'editor', 'excerpt', 'thumbnail' ),
+        'rewrite' => array( 'slug' => 'su-kien' ),
+    ) );
+
+    register_post_type( 'fw_offer', array(
+        'labels' => array(
+            'name' => 'Khuyến mãi', 'singular_name' => 'Khuyến mãi', 'menu_name' => 'Khuyến mãi',
+            'add_new_item' => 'Thêm khuyến mãi', 'edit_item' => 'Sửa khuyến mãi', 'all_items' => 'Tất cả khuyến mãi',
+        ),
+        'public' => true, 'has_archive' => true, 'show_in_rest' => true,
+        'menu_icon' => 'dashicons-tag', 'menu_position' => 6,
+        'supports' => array( 'title', 'editor', 'excerpt', 'thumbnail' ),
+        'rewrite' => array( 'slug' => 'khuyen-mai' ),
+    ) );
+}
+add_action( 'init', 'fairways_register_post_types' );
+
+/**
+ * ACF fields for the new homepage sections + the Event / Offer post types.
+ */
+function fairways_register_more_fields() {
+    if ( ! function_exists( 'acf_add_local_field_group' ) ) {
+        return;
+    }
+
+    $tab = function ( $slug, $label ) {
+        return array( 'key' => 'field_fw_tab_' . $slug, 'label' => $label, 'type' => 'tab', 'placement' => 'top', 'endpoint' => 0 );
+    };
+    $field = function ( $name, $label, $type = 'text', $default = '', $extra = array() ) {
+        return array_merge( array(
+            'key' => 'field_' . $name, 'label' => $label, 'name' => $name, 'type' => $type, 'default_value' => $default,
+        ), $extra );
+    };
+    $image = function ( $name, $label, $instructions = '' ) {
+        return array(
+            'key' => 'field_' . $name, 'label' => $label, 'name' => $name, 'type' => 'image',
+            'return_format' => 'array', 'preview_size' => 'medium', 'library' => 'all', 'instructions' => $instructions,
+        );
+    };
+    $head = function ( $slug, $title ) use ( $field ) {
+        return array(
+            $field( 'fw_' . $slug . '_title', 'Tiêu đề section', 'text', $title ),
+            $field( 'fw_' . $slug . '_desc', 'Mô tả ngắn', 'textarea', "Who said golf has to be punishing. We've included some thoughtful touches to make the game a breeze.", array( 'rows' => 3 ) ),
+            $field( 'fw_' . $slug . '_link_text', 'Chữ liên kết', 'text', 'XEM TẤT CẢ' ),
+            $field( 'fw_' . $slug . '_link_url', 'Đường dẫn liên kết', 'url' ),
+        );
+    };
+
+    $fields = array();
+    $fields[] = $tab( 'events', '05. Sự kiện nổi bật' );
+    $fields   = array_merge( $fields, $head( 'events', 'Sự kiện nổi bật' ) );
+
+    $fields[] = $tab( 'main_services', '06. Dịch vụ chính' );
+    $fields[] = $field( 'fw_main_services_title', 'Tiêu đề section', 'text', 'Dịch vụ chính' );
+    $fields[] = $field( 'fw_main_services_desc', 'Mô tả ngắn', 'textarea', "Who said golf has to be punishing. We've included some thoughtful touches to make the game a breeze.", array( 'rows' => 3 ) );
+    $service_defaults = array( '3D Golf Simulator', 'Club House ( Food and Beverage )', 'Golf Fitness & Swimming Pool' );
+    for ( $i = 1; $i <= 3; $i++ ) {
+        $fields[] = $image( 'fw_main_service_' . $i . '_image', 'Ảnh dịch vụ ' . $i );
+        $fields[] = $field( 'fw_main_service_' . $i . '_title', 'Tên dịch vụ ' . $i, 'text', $service_defaults[ $i - 1 ] );
+        $fields[] = $field( 'fw_main_service_' . $i . '_url', 'Link dịch vụ ' . $i, 'url' );
+    }
+
+    $fields[] = $tab( 'offers', '07. Khuyến mãi' );
+    $fields   = array_merge( $fields, $head( 'offers', 'Khuyến mãi' ) );
+    $fields[] = $field( 'fw_offers_hint', 'Lưu ý', 'message', '', array(
+        'message' => 'Các thẻ khuyến mãi lấy từ menu "Khuyến mãi" ở thanh quản trị (mỗi bài viết = 1 thẻ).',
+    ) );
+
+    $fields[] = $tab( 'membership', '08. Gói hội viên' );
+    $fields   = array_merge( $fields, $head( 'membership', 'Gói hội viên' ) );
+    $member_defaults = array( 'VIP membership', 'Regular membership' );
+    for ( $i = 1; $i <= 2; $i++ ) {
+        $fields[] = $image( 'fw_member_' . $i . '_image', 'Ảnh thẻ hội viên ' . $i, 'Ảnh thẻ nằm giữa khung. Để trống sẽ hiển thị thẻ mẫu.' );
+        $fields[] = $field( 'fw_member_' . $i . '_label', 'Tên gói ' . $i, 'text', $member_defaults[ $i - 1 ] );
+        $fields[] = $field( 'fw_member_' . $i . '_url', 'Link gói ' . $i, 'url' );
+    }
+
+    $fields[] = $tab( 'testimonial', '09. Đánh giá khách hàng' );
+    $fields[] = $image( 'fw_testimonial_bg', 'Ảnh nền' );
+    $fields[] = $field( 'fw_testimonial_quote', 'Nội dung đánh giá', 'textarea', "Who said golf has to be punishing. We've included some thoughtful touches to make the game a breeze. A soft grip and feel to play all your rounds in comfort. A slim, lightweight, durable bag for easy carrying. Plus, these clubs are plain sleek and beautiful. You'll be the envy of the course.", array( 'rows' => 5 ) );
+    $fields[] = $field( 'fw_testimonial_author', 'Tên khách hàng', 'text', 'Nguyen Anh Hong' );
+    $fields[] = $field( 'fw_testimonial_role', 'Chức danh', 'text', 'Entrepreneur' );
+
+    $fields[] = $tab( 'news', '10. Tin tức' );
+    $fields   = array_merge( $fields, $head( 'news', 'Tin tức' ) );
+    $fields[] = $field( 'fw_news_hint', 'Lưu ý', 'message', '', array(
+        'message' => 'Tin tức lấy tự động từ 7 bài viết (Posts) mới nhất: 1 bài nổi bật, 4 bài bên phải, 2 bài dạng liên kết.',
+    ) );
+
+    acf_add_local_field_group( array(
+        'key' => 'group_fairways_homepage_more',
+        'title' => 'Fairways - Homepage (phần tiếp theo)',
+        'fields' => $fields,
+        'location' => array( array( array( 'param' => 'page_type', 'operator' => '==', 'value' => 'front_page' ) ) ),
+        'menu_order' => 1,
+        'position' => 'normal',
+        'style' => 'default',
+        'label_placement' => 'top',
+        'instruction_placement' => 'label',
+        'active' => true,
+        'show_in_rest' => 0,
+    ) );
+
+    acf_add_local_field_group( array(
+        'key' => 'group_fairways_event',
+        'title' => 'Thông tin sự kiện',
+        'fields' => array(
+            $field( 'fw_event_date', 'Ngày tổ chức', 'date_picker', '', array( 'display_format' => 'd/m/Y', 'return_format' => 'd/m/y', 'first_day' => 1 ) ),
+            $field( 'fw_event_time', 'Giờ bắt đầu', 'text', '08:00 AM' ),
+            $field( 'fw_event_button_text', 'Chữ nút', 'text', 'ĐĂNG KÝ NGAY' ),
+            $field( 'fw_event_url', 'Link đăng ký', 'url' ),
+        ),
+        'location' => array( array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'fw_event' ) ) ),
+        'active' => true,
+    ) );
+
+    acf_add_local_field_group( array(
+        'key' => 'group_fairways_offer',
+        'title' => 'Thông tin khuyến mãi',
+        'fields' => array(
+            $field( 'fw_offer_button_text', 'Chữ nút', 'text', 'ĐĂNG KÝ NGAY' ),
+            $field( 'fw_offer_url', 'Link đăng ký', 'url' ),
+        ),
+        'location' => array( array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'fw_offer' ) ) ),
+        'active' => true,
+    ) );
+}
+add_action( 'acf/init', 'fairways_register_more_fields' );
